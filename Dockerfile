@@ -5,7 +5,6 @@ FROM python:3.10.6-buster
 WORKDIR /app
 
 # copy the necessary files to the /app folder in the container
-COPY .env .env
 COPY Pipfile Pipfile
 COPY Pipfile.lock Pipfile.lock
 COPY app.py app.py
