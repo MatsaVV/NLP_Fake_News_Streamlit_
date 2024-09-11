@@ -1,6 +1,6 @@
 import streamlit as st
 import psycopg2
-from config import POSTGRES_CONNECTION_STRING
+from config import API_URL, POSTGRES_CONNECTION_STRING
 import requests
 
 st.title('Fake News Detection')
