@@ -1,6 +1,7 @@
 import streamlit as st
+import psycopg2
+from config import API_URL, POSTGRES_CONNECTION_STRING
 import requests
-from config import API_URL
 
 st.title('Fake News Detection')
 
@@ -14,18 +15,25 @@ with st.form("my_form"):
 
     if submitted:
         try:
+            # Call the API for prediction
             response = requests.post(API_URL, json={
                 'title': title,
                 'text': text,
                 'subject': subject,
                 'date': str(date)
             })
-            response.raise_for_status()  # This will raise an exception for HTTP error codes
+            response.raise_for_status()  # Raise error for bad HTTP responses
             prediction = response.json()
-            st.write('Prediction:', prediction)
+            label = prediction.get('prediction')  # Assuming the API returns a 'label' for prediction
 
-            # Store the prediction in session state to persist it across renders
-            st.session_state.prediction = prediction
+            if label == 'fake':
+                label = False
+            else:
+                label = True
+
+            st.write('Prediction:', label)
+
+            st.session_state.prediction = label
             st.session_state.submitted = True
 
         except requests.exceptions.HTTPError as e:
@@ -47,17 +55,32 @@ if st.session_state.get('submitted', False):
 
         if feedback_submitted:
             try:
-                feedback_response = requests.post(f"{API_URL}/feedback", json={
-                    'title': title,
-                    'text': text,
-                    'subject': subject,
-                    'date': str(date),
-                    'prediction': st.session_state.prediction,
-                    'feedback': feedback
-                })
-                feedback_response.raise_for_status()
-                st.success("Thank you for your feedback!")
-            except requests.exceptions.RequestException as e:
-                st.error("Failed to submit feedback.")
+                # Connect to the PostgreSQL database
+                conn = psycopg2.connect(POSTGRES_CONNECTION_STRING)
+                cur = conn.cursor()
+
+                # Insert feedback and article data into the 'articles' table
+                insert_query = """
+                INSERT INTO articles (title, text, subject, date, label, labelUser)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                cur.execute(insert_query, (
+                    title,  # The title of the article
+                    text,   # The content of the article
+                    subject,  # The subject of the article
+                    date,   # The date of the article
+                    st.session_state.prediction,  # The predicted label (True or False)
+                    feedback  # User feedback on the label (True or False)
+                ))
+                conn.commit()
+
+                # Close connection
+                cur.close()
+                conn.close()
+
+                st.success("Thank you for your feedback! Data has been saved.")
+
+            except psycopg2.DatabaseError as e:
+                st.error(f"Database error occurred: {str(e)}")
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
