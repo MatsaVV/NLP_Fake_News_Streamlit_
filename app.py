@@ -1,9 +1,45 @@
 import streamlit as st
 import psycopg2
-from config import API_URL, POSTGRES_CONNECTION_STRING
 import requests
+from config import API_URL, POSTGRES_CONNECTION_STRING
 
 st.title('Fake News Detection')
+
+def predict_news(title, text, subject, date):
+    """Make an API call to predict whether news is fake or not."""
+    try:
+        response = requests.post(API_URL, json={
+            'title': title,
+            'text': text,
+            'subject': subject,
+            'date': str(date)
+        })
+        response.raise_for_status()
+        prediction = response.json().get('prediction')
+        return prediction if prediction == 'fake' else True
+    except requests.exceptions.HTTPError as e:
+        st.error(f'HTTP error occurred: {e.response.status_code}')
+    except requests.exceptions.RequestException:
+        st.error('Failed to connect to the API')
+    except Exception as e:
+        st.error(f'An error occurred: {str(e)}')
+
+def insert_article(title, text, subject, date, label, user_feedback):
+    """Insert article and feedback into the database."""
+    query = """
+    INSERT INTO articles (title, text, subject, date, label, labelUser)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with psycopg2.connect(POSTGRES_CONNECTION_STRING) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (title, text, subject, date, label, user_feedback))
+                conn.commit()
+                st.success("Thank you for your feedback! Data has been saved.")
+    except psycopg2.DatabaseError as e:
+        st.error(f"Database error occurred: {str(e)}")
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
 
 # Form to submit news details for prediction
 with st.form("my_form"):
@@ -14,38 +50,14 @@ with st.form("my_form"):
     submitted = st.form_submit_button("Submit")
 
     if submitted:
-        try:
-            # Call the API for prediction
-            response = requests.post(API_URL, json={
-                'title': title,
-                'text': text,
-                'subject': subject,
-                'date': str(date)
-            })
-            response.raise_for_status()  # Raise error for bad HTTP responses
-            prediction = response.json()
-            label = prediction.get('prediction')  # Assuming the API returns a 'label' for prediction
-
-            if label == 'fake':
-                label = False
-            else:
-                label = True
-
-            st.write('Prediction:', label)
-
-            st.session_state.prediction = label
-            st.session_state.submitted = True
-
-        except requests.exceptions.HTTPError as e:
-            st.error(f'HTTP error occurred: {e.response.status_code}')
-        except requests.exceptions.RequestException as e:
-            st.error('Failed to connect to the API')
-        except Exception as e:
-            st.error(f'An error occurred: {str(e)}')
+        prediction = predict_news(title, text, subject, date)
+        st.session_state['prediction'] = prediction
+        st.session_state['submitted'] = True
+        st.write('Prediction:', prediction)
 
 # Check if the prediction has been made
 if st.session_state.get('submitted', False):
-    st.write("Prediction:", st.session_state.prediction)
+    st.write("Prediction:", st.session_state['prediction'])
 
     # Form for feedback
     with st.form("feedback_form"):
@@ -54,33 +66,4 @@ if st.session_state.get('submitted', False):
         feedback_submitted = st.form_submit_button("Submit Feedback")
 
         if feedback_submitted:
-            try:
-                # Connect to the PostgreSQL database
-                conn = psycopg2.connect(POSTGRES_CONNECTION_STRING)
-                cur = conn.cursor()
-
-                # Insert feedback and article data into the 'articles' table
-                insert_query = """
-                INSERT INTO articles (title, text, subject, date, label, labelUser)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """
-                cur.execute(insert_query, (
-                    title,  # The title of the article
-                    text,   # The content of the article
-                    subject,  # The subject of the article
-                    date,   # The date of the article
-                    st.session_state.prediction,  # The predicted label (True or False)
-                    feedback  # User feedback on the label (True or False)
-                ))
-                conn.commit()
-
-                # Close connection
-                cur.close()
-                conn.close()
-
-                st.success("Thank you for your feedback! Data has been saved.")
-
-            except psycopg2.DatabaseError as e:
-                st.error(f"Database error occurred: {str(e)}")
-            except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
+            insert_article(title, text, subject, date, st.session_state['prediction'], feedback)
