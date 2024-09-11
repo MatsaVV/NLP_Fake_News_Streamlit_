@@ -24,7 +24,12 @@ with st.form("my_form"):
             })
             response.raise_for_status()  # Raise error for bad HTTP responses
             prediction = response.json()
-            label = prediction.get('label')  # Assuming the API returns a 'label' for prediction
+            label = prediction.get('prediction')  # Assuming the API returns a 'label' for prediction
+
+            if label == 'fake':
+                label = False
+            else:
+                label = True
 
             st.write('Prediction:', label)
 
