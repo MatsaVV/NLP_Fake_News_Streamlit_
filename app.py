@@ -3,6 +3,7 @@ import psycopg2
 import requests
 from config import API_URL, POSTGRES_CONNECTION_STRING
 
+
 st.title('Fake News Detection')
 
 def predict_news(title, text, subject, date):
